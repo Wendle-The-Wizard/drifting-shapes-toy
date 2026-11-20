@@ -1,4 +1,4 @@
-// Step 4: make the shapes glide toward the pointer.
+// Step 5: gentle fading trails and smoother motion.
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const hint = document.getElementById('hint');
@@ -12,12 +12,11 @@ const palette = [
 
 const shapes = [];
 
-// The pointer: when inactive, shapes just drift
-const pointer = { x: 0, y: 0, active: false, strength: 0 };
+// The pointer: x/y is where it really is, sx/sy is a smoothed copy the shapes follow
+const pointer = { x: 0, y: 0, sx: 0, sy: 0, active: false, strength: 0 };
 
 function rand(a, b) { return a + Math.random() * (b - a); }
 
-// Make shapes; mostly soft circles, a few rounded triangles and squares
 function makeShapes() {
   shapes.length = 0;
   const count = 9;
@@ -30,11 +29,10 @@ function makeShapes() {
       y: rand(0.1, 0.9) * height,
       vx: Math.cos(dir) * speed,
       vy: Math.sin(dir) * speed,
-      // extra velocity from the pointer pull, kept separate so drifting stays gentle
-      px: 0, py: 0,
-      pull: rand(0.5, 1.4), // each shape is a little more or less eager
+      px: 0, py: 0, // extra velocity from pointer pull and nudging
+      pull: rand(0.5, 1.4),
       spin: rand(-0.15, 0.15),
-      size: rand(0.06, 0.14) * base,
+      size: rand(0.05, 0.11) * base,
       angle: rand(0, Math.PI * 2),
       sides: [0, 0, 3, 0, 0, 4][i % 6], // 0 means a circle
       color: palette[i % palette.length],
@@ -83,23 +81,44 @@ function drawShape(s) {
 }
 
 function update(dt, t) {
-  // ease the overall pull in and out so it never snaps on or off
+  const base = Math.min(width, height);
   const target = pointer.active ? 1 : 0;
   pointer.strength += (target - pointer.strength) * Math.min(1, dt * 3);
-  const base = Math.min(width, height);
+  // the followed point eases toward the real pointer, so quick flicks don't jerk the shapes
+  const ease = Math.min(1, dt * 8);
+  pointer.sx += (pointer.x - pointer.sx) * ease;
+  pointer.sy += (pointer.y - pointer.sy) * ease;
 
   for (const s of shapes) {
     if (pointer.strength > 0.001) {
-      const dx = pointer.x - s.x, dy = pointer.y - s.y;
+      const dx = pointer.sx - s.x, dy = pointer.sy - s.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      // gentle spring toward the pointer, but ease off when close so they hover around it
+      // ease off when close so they hover around the pointer
       const near = Math.min(1, dist / (base * 0.25));
       const accel = 0.9 * s.pull * pointer.strength * near;
       s.px += (dx / dist) * accel * base * 0.3 * dt;
       s.py += (dy / dist) * accel * base * 0.3 * dt;
     }
+  }
+
+  // shapes politely nudge each other apart so they don't pile up on one spot
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      const a = shapes[i], b = shapes[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const min = (a.size + b.size) * 1.1;
+      if (d < min) {
+        const f = (1 - d / min) * base * 0.5 * dt;
+        a.px -= (dx / d) * f; a.py -= (dy / d) * f;
+        b.px += (dx / d) * f; b.py += (dy / d) * f;
+      }
+    }
+  }
+
+  for (const s of shapes) {
     // damping makes the glide smooth instead of jittery
-    const damp = Math.exp(-1.6 * dt);
+    const damp = Math.exp(-1.8 * dt);
     s.px *= damp;
     s.py *= damp;
 
@@ -116,20 +135,48 @@ function update(dt, t) {
   }
 }
 
+// A small soft glow so you can see where the shapes are heading
+function drawPointer() {
+  if (pointer.strength < 0.01) return;
+  const base = Math.min(width, height);
+  const r = base * 0.035;
+  const a = pointer.strength;
+  const g = ctx.createRadialGradient(pointer.sx, pointer.sy, 0, pointer.sx, pointer.sy, r);
+  g.addColorStop(0, 'rgba(255,255,255,' + (0.5 * a) + ')');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(pointer.sx, pointer.sy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 * a) + ')';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(pointer.sx, pointer.sy, r * 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function draw() {
-  ctx.fillStyle = '#14121f';
+  // instead of wiping the canvas, I paint a see-through layer of night over it,
+  // so old frames fade away slowly and leave trails
+  ctx.fillStyle = 'rgba(20,18,31,0.13)';
   ctx.fillRect(0, 0, width, height);
   for (const s of shapes) drawShape(s);
+  drawPointer();
 }
 
 // dt is capped so a hidden tab doesn't cause a big jump
 let last = 0;
 function frame(t) {
-  const dt = Math.min((t - last) / 1000, 0.05);
+  const dt = Math.min(Math.max((t - last) / 1000, 0), 0.05);
   last = t;
   update(dt, t);
   draw();
   requestAnimationFrame(frame);
+}
+
+function clearAll() {
+  ctx.fillStyle = '#14121f';
+  ctx.fillRect(0, 0, width, height);
 }
 
 function resize() {
@@ -139,12 +186,15 @@ function resize() {
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pointer.sx = pointer.x = width / 2;
+  pointer.sy = pointer.y = height / 2;
   makeShapes();
-  draw();
+  clearAll();
 }
 
 // Pointer events cover mouse, touch and pen in one go
 function setPointer(e) {
+  if (!pointer.active) { pointer.sx = e.clientX; pointer.sy = e.clientY; }
   pointer.x = e.clientX;
   pointer.y = e.clientY;
   pointer.active = true;
