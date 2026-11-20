@@ -1,4 +1,4 @@
-// Step 2: draw soft rounded shapes in pale colours.
+// Step 3: make the shapes drift slowly on their own.
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let width = 0, height = 0;
@@ -11,22 +11,27 @@ const palette = [
 
 const shapes = [];
 
-// Simple random helper
 function rand(a, b) { return a + Math.random() * (b - a); }
 
-// Make a handful of shapes at random spots (they don't move yet!)
+// Make a handful of shapes, each with its own slow velocity and spin
 function makeShapes() {
   shapes.length = 0;
   const count = 9;
   const base = Math.min(width, height);
   for (let i = 0; i < count; i++) {
+    const dir = rand(0, Math.PI * 2);
+    const speed = rand(0.01, 0.035) * base; // pixels per second, very gentle
     shapes.push({
       x: rand(0.1, 0.9) * width,
       y: rand(0.1, 0.9) * height,
+      vx: Math.cos(dir) * speed,
+      vy: Math.sin(dir) * speed,
+      spin: rand(-0.15, 0.15),
       size: rand(0.06, 0.14) * base,
       angle: rand(0, Math.PI * 2),
       sides: [0, 3, 4, 0][i % 4], // 0 means a circle
-      color: palette[i % palette.length]
+      color: palette[i % palette.length],
+      phase: rand(0, Math.PI * 2)
     });
   }
 }
@@ -53,7 +58,6 @@ function roundedPolygon(s) {
 
 function drawShape(s) {
   const [h, sat, l] = s.color;
-  // a soft radial gradient gives the glow
   const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size * 1.3);
   g.addColorStop(0, 'hsla(' + h + ',' + sat + '%,' + (l + 8) + '%,0.9)');
   g.addColorStop(0.7, 'hsla(' + h + ',' + sat + '%,' + l + '%,0.6)');
@@ -71,13 +75,38 @@ function drawShape(s) {
   ctx.shadowBlur = 0;
 }
 
+// Move every shape a little; wrap around the edges so they never vanish for good
+function update(dt, t) {
+  for (const s of shapes) {
+    // a tiny wobble in the heading makes the path wander softly
+    const wob = Math.sin(t * 0.0003 + s.phase) * 0.004 * Math.min(width, height);
+    s.x += (s.vx + wob) * dt;
+    s.y += (s.vy - wob) * dt;
+    s.angle += s.spin * dt;
+    const m = s.size * 1.5;
+    if (s.x < -m) s.x = width + m;
+    if (s.x > width + m) s.x = -m;
+    if (s.y < -m) s.y = height + m;
+    if (s.y > height + m) s.y = -m;
+  }
+}
+
 function draw() {
   ctx.fillStyle = '#14121f';
   ctx.fillRect(0, 0, width, height);
   for (const s of shapes) drawShape(s);
 }
 
-// Fit the canvas to the window, sharp on phones too
+// The animation loop; dt is capped so a hidden tab doesn't cause a big jump
+let last = 0;
+function frame(t) {
+  const dt = Math.min((t - last) / 1000, 0.05);
+  last = t;
+  update(dt, t);
+  draw();
+  requestAnimationFrame(frame);
+}
+
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   width = window.innerWidth;
@@ -91,3 +120,4 @@ function resize() {
 
 window.addEventListener('resize', resize);
 resize();
+requestAnimationFrame(function (t) { last = t; frame(t); });
