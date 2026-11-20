@@ -2,6 +2,6 @@
 
 A quiet little toy where soft glowing shapes drift across the screen and gently follow your pointer.
 
-Now (step 4 of 5) the pale shapes glide toward your pointer. Move the mouse, or touch and drag on a phone, and they drift over to you, slowing down as they get close. Let go and they wander off on their own again. I made most of them circles this time, with a few rounded triangles and squares for company.
+Move the mouse, or touch and drag on a phone, and the pale shapes glide over to you. A small glowing dot shows where they are heading. They slow down as they get close, nudge each other so they don't pile up, and leave soft fading trails behind them. Let go and they wander off on their own again.
 
-A small hint shows at first and fades once you move. Soft fading trails come next!
+This is the last step (5 of 5): I added the trails and smoothed the motion, so the pointer is eased and the glide feels calm instead of twitchy. A small hint at the top fades away once you move.
