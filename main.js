@@ -1,6 +1,7 @@
-// Step 3: make the shapes drift slowly on their own.
+// Step 4: make the shapes glide toward the pointer.
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
 let width = 0, height = 0;
 
 // My pale colour palette (hue, saturation, lightness)
@@ -11,25 +12,31 @@ const palette = [
 
 const shapes = [];
 
+// The pointer: when inactive, shapes just drift
+const pointer = { x: 0, y: 0, active: false, strength: 0 };
+
 function rand(a, b) { return a + Math.random() * (b - a); }
 
-// Make a handful of shapes, each with its own slow velocity and spin
+// Make shapes; mostly soft circles, a few rounded triangles and squares
 function makeShapes() {
   shapes.length = 0;
   const count = 9;
   const base = Math.min(width, height);
   for (let i = 0; i < count; i++) {
     const dir = rand(0, Math.PI * 2);
-    const speed = rand(0.01, 0.035) * base; // pixels per second, very gentle
+    const speed = rand(0.01, 0.035) * base;
     shapes.push({
       x: rand(0.1, 0.9) * width,
       y: rand(0.1, 0.9) * height,
       vx: Math.cos(dir) * speed,
       vy: Math.sin(dir) * speed,
+      // extra velocity from the pointer pull, kept separate so drifting stays gentle
+      px: 0, py: 0,
+      pull: rand(0.5, 1.4), // each shape is a little more or less eager
       spin: rand(-0.15, 0.15),
       size: rand(0.06, 0.14) * base,
       angle: rand(0, Math.PI * 2),
-      sides: [0, 3, 4, 0][i % 4], // 0 means a circle
+      sides: [0, 0, 3, 0, 0, 4][i % 6], // 0 means a circle
       color: palette[i % palette.length],
       phase: rand(0, Math.PI * 2)
     });
@@ -75,14 +82,32 @@ function drawShape(s) {
   ctx.shadowBlur = 0;
 }
 
-// Move every shape a little; wrap around the edges so they never vanish for good
 function update(dt, t) {
+  // ease the overall pull in and out so it never snaps on or off
+  const target = pointer.active ? 1 : 0;
+  pointer.strength += (target - pointer.strength) * Math.min(1, dt * 3);
+  const base = Math.min(width, height);
+
   for (const s of shapes) {
-    // a tiny wobble in the heading makes the path wander softly
-    const wob = Math.sin(t * 0.0003 + s.phase) * 0.004 * Math.min(width, height);
-    s.x += (s.vx + wob) * dt;
-    s.y += (s.vy - wob) * dt;
+    if (pointer.strength > 0.001) {
+      const dx = pointer.x - s.x, dy = pointer.y - s.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      // gentle spring toward the pointer, but ease off when close so they hover around it
+      const near = Math.min(1, dist / (base * 0.25));
+      const accel = 0.9 * s.pull * pointer.strength * near;
+      s.px += (dx / dist) * accel * base * 0.3 * dt;
+      s.py += (dy / dist) * accel * base * 0.3 * dt;
+    }
+    // damping makes the glide smooth instead of jittery
+    const damp = Math.exp(-1.6 * dt);
+    s.px *= damp;
+    s.py *= damp;
+
+    const wob = Math.sin(t * 0.0003 + s.phase) * 0.004 * base;
+    s.x += (s.vx + wob + s.px) * dt;
+    s.y += (s.vy - wob + s.py) * dt;
     s.angle += s.spin * dt;
+
     const m = s.size * 1.5;
     if (s.x < -m) s.x = width + m;
     if (s.x > width + m) s.x = -m;
@@ -97,7 +122,7 @@ function draw() {
   for (const s of shapes) drawShape(s);
 }
 
-// The animation loop; dt is capped so a hidden tab doesn't cause a big jump
+// dt is capped so a hidden tab doesn't cause a big jump
 let last = 0;
 function frame(t) {
   const dt = Math.min((t - last) / 1000, 0.05);
@@ -117,6 +142,19 @@ function resize() {
   makeShapes();
   draw();
 }
+
+// Pointer events cover mouse, touch and pen in one go
+function setPointer(e) {
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  pointer.active = true;
+  if (hint) { hint.style.opacity = '0'; }
+}
+canvas.addEventListener('pointermove', setPointer);
+canvas.addEventListener('pointerdown', setPointer);
+canvas.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') pointer.active = false; });
+canvas.addEventListener('pointercancel', function () { pointer.active = false; });
+canvas.addEventListener('pointerleave', function () { pointer.active = false; });
 
 window.addEventListener('resize', resize);
 resize();
