@@ -1,0 +1,13 @@
+/* A blank, quiet page: just a dark canvas filling the screen */
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #14121f;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
